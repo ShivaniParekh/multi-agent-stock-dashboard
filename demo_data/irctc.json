@@ -1,0 +1,9 @@
+{
+  "symbol":"IRCTC","name":"Indian Railway Catering & Tourism","cap_segment":"small","sector":"Travel Services",
+  "price":{"live":692.5,"day_open":698.0,"high":704.0,"low":685.1,"prev_close":699.5,"day_change_pct":-1.001,"volume":3180000},
+  "range_52w":{"high":1149.0,"low":645.0,"pct_from_high":-39.73,"position_pct":10.32},
+  "technicals":{"rvol":0.62,"price_vs_sma_pct":-4.4,"window_return_pct":-6.8,"swing_high":731.0,"swing_low":681.5,"day_range_position_pct":38.62,"trend":"down"},
+  "analyst":{"consensus":"hold","num_analysts":14,"buy_pct":42.86,"hold_pct":42.86,"sell_pct":14.28,"target_mean":690.0,"target_low":610.0,"target_high":850.0,"upside_pct":-0.36},
+  "news":{"total":6,"positive":1,"negative":4,"neutral":1,"recent":[{"title":"Demand commentary remains mixed","tone":"negative"},{"title":"Analysts flag near-term pressure","tone":"negative"}]},
+  "data_gaps":[]
+}

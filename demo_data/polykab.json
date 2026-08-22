@@ -1,0 +1,9 @@
+{
+  "symbol":"POLYCAB","name":"Polycab India","cap_segment":"mid","sector":"Cables & Wires",
+  "price":{"live":6945.0,"day_open":6768.0,"high":6998.0,"low":6745.0,"prev_close":6772.0,"day_change_pct":2.555,"volume":1420000},
+  "range_52w":{"high":7020.0,"low":4280.0,"pct_from_high":-1.07,"position_pct":97.26},
+  "technicals":{"rvol":3.65,"price_vs_sma_pct":6.9,"window_return_pct":15.4,"swing_high":6998.0,"swing_low":6100.0,"day_range_position_pct":89.71,"trend":"up"},
+  "analyst":{"consensus":"buy","num_analysts":19,"buy_pct":73.68,"hold_pct":21.05,"sell_pct":5.27,"target_mean":7315.0,"target_low":6460.0,"target_high":7900.0,"upside_pct":5.33},
+  "news":{"total":4,"positive":4,"negative":0,"neutral":0,"recent":[{"title":"Strong demand commentary supports growth view","tone":"positive"},{"title":"Brokerage sees durable execution","tone":"positive"}]},
+  "data_gaps":[]
+}

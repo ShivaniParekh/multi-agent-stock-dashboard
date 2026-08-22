@@ -1,0 +1,9 @@
+{
+  "symbol":"RELIANCE","name":"Reliance Industries","cap_segment":"large","sector":"Energy",
+  "price":{"live":1420.5,"day_open":1402.0,"high":1434.2,"low":1397.5,"prev_close":1408.0,"day_change_pct":0.888,"volume":8500000},
+  "range_52w":{"high":1575.0,"low":1120.0,"pct_from_high":-9.81,"position_pct":66.04},
+  "technicals":{"rvol":1.78,"price_vs_sma_pct":2.65,"window_return_pct":4.82,"swing_high":1434.2,"swing_low":1320.0,"day_range_position_pct":79.78,"trend":"up"},
+  "analyst":{"consensus":"buy","num_analysts":34,"buy_pct":67.65,"hold_pct":23.53,"sell_pct":8.82,"target_mean":1545.0,"target_low":1340.0,"target_high":1710.0,"upside_pct":8.77},
+  "news":{"total":5,"positive":3,"negative":1,"neutral":1,"recent":[{"title":"Reliance unit outlines fresh investment priorities","tone":"positive"},{"title":"Brokerage reiterates constructive outlook","tone":"positive"},{"title":"Quarterly margin watch remains key","tone":"neutral"}]},
+  "data_gaps":[]
+}

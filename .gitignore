@@ -1,0 +1,12 @@
+.env
+*.sqlite3
+__pycache__/
+*.pyc
+.vscode/
+venv/
+.venv/
+audit.sqlite3
+strategy_settings.json
+refresh_universe.bat
+run.bat
+run.sh

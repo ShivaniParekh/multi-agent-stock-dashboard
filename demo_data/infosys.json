@@ -1,0 +1,9 @@
+{
+  "symbol":"INFY","name":"Infosys","cap_segment":"large","sector":"IT Services",
+  "price":{"live":1599.0,"day_open":1586.0,"high":1610.0,"low":1570.0,"prev_close":1584.0,"day_change_pct":0.947,"volume":5100000},
+  "range_52w":{"high":1880.0,"low":1325.0,"pct_from_high":-14.95,"position_pct":49.37},
+  "technicals":{"rvol":1.12,"price_vs_sma_pct":1.1,"window_return_pct":1.6,"swing_high":1610.0,"swing_low":1500.0,"day_range_position_pct":72.5,"trend":"sideways"},
+  "analyst":{"consensus":"buy","num_analysts":28,"buy_pct":60.71,"hold_pct":28.57,"sell_pct":10.72,"target_mean":1730.0,"target_low":1490.0,"target_high":1940.0,"upside_pct":8.19},
+  "news":{"total":5,"positive":2,"negative":1,"neutral":2,"recent":[{"title":"Large-deal momentum remains constructive","tone":"positive"},{"title":"Margins remain a monitorable risk","tone":"neutral"}]},
+  "data_gaps":["analyst.target_high"]
+}
