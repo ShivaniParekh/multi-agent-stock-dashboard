@@ -4,7 +4,7 @@ This version adds automatic NSE universe discovery and a two-stage live screener
 
 ## What changed
 
-The old small hand-maintained universe is now optional. `refresh_universe.py` downloads NSE's current equity-segment security list, keeps normal `EQ` series symbols, applies `universe_overrides.json`, queries market-cap metadata, and writes `universe.json` grouped into large/mid/small. NSE publishes a current equity securities CSV on its “Securities available for Trading” page. The series legend identifies EQ as rolling-settlement fully paid equity shares. citeturn973572search0turn973572search9
+The old small hand-maintained universe is now optional. `refresh_universe.py` downloads NSE's current equity-segment security list, keeps normal `EQ` series symbols, applies `universe_overrides.json`, queries market-cap metadata, and writes `universe.json` grouped into large/mid/small. NSE publishes a current equity securities CSV on its “Securities available for Trading” page. The series legend identifies EQ as rolling-settlement fully paid equity shares. 
 
 Live analysis is now two-stage:
 
@@ -68,7 +68,7 @@ The existing LLM provider chain, deterministic fallback, SQLite audit trail, evi
 
 ## Data-source note
 
-NSE's securities page provides separate CSVs for equity, SME, ETF, REIT/InvIT and other instruments, so this refresh uses the equity CSV and `EQ` series rather than treating every listed security as a normal stock. citeturn973572search0turn973572search9
+NSE's securities page provides separate CSVs for equity, SME, ETF, REIT/InvIT and other instruments, so this refresh uses the equity CSV and `EQ` series rather than treating every listed security as a normal stock. 
 
 ## Trade-plan output
 
