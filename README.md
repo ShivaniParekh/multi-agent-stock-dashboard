@@ -86,7 +86,7 @@ Trade-plan calculation controls are also exposed in **Strategy / Scoring Setting
 
 ## Future Scope
 
-[] Use AngelOne/Zerodha API.
-[] Add inhouse paper trading.
-[] Update trade every X mins.
-[] Add support for short trades.
+- [ ] Use AngelOne/Zerodha API.
+- [ ] Add inhouse paper trading.
+- [ ] Update trade every X mins.
+- [ ] Add support for short trades.
