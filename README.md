@@ -83,3 +83,10 @@ BUY verdicts now include a generated trade plan in the dashboard and Telegram al
 For WATCH/AVOID verdicts, the dashboard explicitly shows **No entry** rather than inventing a trade plan.
 
 Trade-plan calculation controls are also exposed in **Strategy / Scoring Settings** so you can tune entry pullback, breakout buffer, swing triggers, and minimum target moves without editing Python.
+
+## Future Scope
+
+[] Use AngelOne/Zerodha API.
+[] Add inhouse paper trading.
+[] Update trade every X mins.
+[] Add support for short trades.
