@@ -3,6 +3,7 @@ import json, math, os, re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pandas as pd
+from pattern_detection import detect_patterns
 
 ROOT = Path(__file__).resolve().parent
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -54,7 +55,12 @@ def build_evidence(ticker, segment, info, hist, news):
         a = close.tail(10).mean()
         b = close.rolling(10).mean().iloc[-6]
         trend = 'up' if a > .005 * b else 'down' if a < -.005 * b else 'sideways'
-
+    patterns = detect_patterns(
+    hist,
+    tolerance_pct=float(
+        os.getenv("PATTERN_TOLERANCE_PCT", "3")
+    )
+    )
     analyst = {
         'consensus': info.get('recommendationKey'),
         'num_analysts': info.get('numberOfAnalystOpinions'),
@@ -88,6 +94,7 @@ def build_evidence(ticker, segment, info, hist, news):
         'name': info.get('longName') or info.get('shortName') or sym,
         'cap_segment': segment,
         'sector': info.get('sector'),
+        "patterns": patterns,
         'price': {
             'live': live,
             'day_open': day_open,
@@ -227,7 +234,7 @@ def load_live(shortlist=6):
     for seg, t in candidates:
         try:
             o = yf.Ticker(t)
-            h = o.history(period='1mo', interval='1d', auto_adjust=False)
+            h = o.history(period='1y', interval='1d', auto_adjust=False)
             out.append(build_evidence(t, seg, o.info or {}, h, o.news or []))
         except Exception:
             continue

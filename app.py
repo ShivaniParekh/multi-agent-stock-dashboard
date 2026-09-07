@@ -7,6 +7,8 @@ from data_sources import load_demo, load_live, timestamp_ist, refresh_universe
 from llm import evaluate, provider
 from datetime import datetime, time as dt_time
 from zoneinfo import ZoneInfo
+import webbrowser
+import threading
 
 ROOT = Path(__file__).resolve().parent
 app = Flask(__name__, static_folder=None)
@@ -340,6 +342,7 @@ def cycle(mode):
                 'invalidation': None,
                 'note': ''
             }
+            chart = f"https://www.tradingview.com/symbols/NSE-{b['symbol']}/"
             entry = {
                 'symbol': b['symbol'],
                 'name': b['name'],
@@ -351,8 +354,26 @@ def cycle(mode):
                 'catalyst': scrub(v.get('key_catalyst')),
                 'price': p.get('live'),
                 'day_change_pct': p.get('day_change_pct'),
+                "pattern": (
+                    b.get("patterns", {})
+                    .get("primary", {})
+                    .get("pattern")
+                    if b.get("patterns", {}).get("primary")
+                    else None
+                    ),
+
+                "pattern_status": (
+                    b.get("patterns", {})
+                        .get("primary", {})
+                        .get("status")
+                    if b.get("patterns", {}).get("primary")
+                    else None
+                    ),
+
+
                 'engine': engines[idx],
-                'trade_plan': plan
+                'trade_plan': plan,
+                'chart_url': chart,
             }
             con.execute(
                 'INSERT INTO verdicts(run_id,symbol,segment,verdict,confidence,winner,rationale,catalyst,price,day_change,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -430,8 +451,8 @@ def cycle(mode):
                     f"<b>Stop Loss:</b> "
                     f"₹{tp.get('invalidation')}\n\n"
 
-                    f"Live price: ₹{e['price']} | "
-                    f"Day change: {e['day_change_pct']}%\n"
+                    f"Live price: ₹{round(e['price'], 2)} | "
+                    f"Day change: {round(e['day_change_pct'], 2)}%\n"
 
                     f"— Analysis only. "
                     f"No trade was placed. "
@@ -656,6 +677,10 @@ if __name__ == "__main__":
 
         scheduler_thread.start()
 
+    port = int(os.environ.get("PORT", "5000"))    
+    url = f"http://127.0.0.1:{port}"
+    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    
     app.run(
         host="127.0.0.1",
         port=int(os.getenv("PORT", "5000")),

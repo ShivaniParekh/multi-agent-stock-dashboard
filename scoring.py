@@ -102,6 +102,9 @@ def build_trade_plan(e, verdict, strategy=None):
 def deterministic_evaluate(e, strategy=None):
     s = merge_strategy(strategy); w=s['weights']; g=s['triggers']
     t,r,a,n=e.get('technicals',{}),e.get('range_52w',{}),e.get('analyst',{}),e.get('news',{})
+    patterns = e.get("patterns", {})
+    detected_patterns = patterns.get("detected", [])
+
     bull=bear=0; br=[]; er=[]
     rv=t.get('rvol')
     if rv is not None:
@@ -134,6 +137,57 @@ def deterministic_evaluate(e, strategy=None):
     if p is not None and q is not None:
         if p>q: bull+=w['positive_news']; br.append('news tone skews positive')
         elif q>p: bear+=w['negative_news']; er.append('news tone skews negative')
+        # ---------------------------------------------------------
+    # PATTERN DETECTION
+    # ---------------------------------------------------------
+
+    for pattern in detected_patterns:
+        pattern_name = pattern.get("pattern")
+        direction = pattern.get("direction")
+        confidence = pattern.get("confidence", 0)
+        status = pattern.get("status")
+
+        # Only allow meaningful confidence values.
+        confidence = max(
+            0,
+            min(100, float(confidence or 0))
+        )
+
+        # Confirmed patterns receive more weight.
+        confirmation_multiplier = (
+            1.0 if status == "confirmed"
+            else 0.6
+        )
+
+        if direction == "bullish":
+
+            points = min(
+                18,
+                confidence * 0.18
+                * confirmation_multiplier
+            )
+
+            bull += points
+
+            br.append(
+                f"{pattern_name} supports the bullish setup"
+            )
+
+        elif direction == "bearish":
+
+            points = min(
+                18,
+                confidence * 0.18
+                * confirmation_multiplier
+            )
+
+            bear += points
+
+            er.append(
+                f"{pattern_name} supports the bearish setup"
+            )
+
+
     wr=t.get('window_return_pct')
     if wr is not None:
         if wr>g['window_return_positive']: bull+=min(w['positive_window_return_max'],wr/2); br.append('window return is positive')
