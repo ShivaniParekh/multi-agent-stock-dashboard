@@ -643,6 +643,50 @@ footer{
     font-size:13px;
 }
 
+.chart-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.chart-link:hover {
+    text-decoration: underline;
+}
+
+.excel-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.excel-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.success {
+    color: #15803d;
+    font-size: 12px;
+}
+
+@media(max-width:680px) {
+
+    .excel-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .excel-actions {
+        width: 100%;
+    }
+
+    .excel-actions .btn {
+        flex: 1;
+    }
+}
+
 /* =========================
    RESPONSIVE
 ========================= */
@@ -1423,7 +1467,46 @@ footer{
 
     </section>
 
+        <div class="sec">
 
+        <div class="card excel-bar">
+
+            <div>
+                <b>Stock suggestion tracker</b>
+
+                <div class="help">
+                    All analyzed stocks are saved with their
+                    suggestion timestamp and full analysis.
+                </div>
+            </div>
+
+            <div class="excel-actions">
+
+                <button
+                    id="saveExcel"
+                    class="btn"
+                >
+                    Save all to Excel
+                </button>
+
+                <a
+                    id="downloadExcel"
+                    class="btn primary"
+                    href="/export/download"
+                >
+                    Download Excel
+                </a>
+
+            </div>
+
+            <span
+                id="excelStatus"
+                class="success"
+            ></span>
+
+        </div>
+
+    </div>
     <!-- =========================
          FOOTER
     ========================== -->
@@ -1823,10 +1906,14 @@ function renderVerdicts(state){
                 v.chart_url
                 ? `
                     <a
-                        href="${esc(v.chart_url)}"
+                        class="chart-link"
+                        href="${esc(
+                            v.chart_url ||
+                            `https://www.tradingview.com/symbols/NSE-${encodeURIComponent(v.symbol)}/`
+                        )}"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="chart-link">
+                    >
                         Chart ↗
                     </a>
                 `
@@ -2195,6 +2282,50 @@ document
 
         }
     );
+
+saveExcel.onclick = async () => {
+
+    excelStatus.textContent =
+        "Saving...";
+
+    try {
+
+        const response = await fetch(
+            "/export/save",
+            {
+                method: "POST"
+            }
+        );
+
+        const result =
+            await response.json();
+
+        if (result.ok) {
+
+            excelStatus.textContent =
+                `Saved ${result.rows} stock suggestions ✓`;
+
+        } else {
+
+            excelStatus.textContent =
+                "Save failed: " +
+                (result.error || "Unknown error");
+        }
+
+    } catch (error) {
+
+        excelStatus.textContent =
+            "Save failed.";
+
+    }
+
+    setTimeout(
+        () => {
+            excelStatus.textContent = "";
+        },
+        3000
+    );
+};
 
 
 /* ============================================================

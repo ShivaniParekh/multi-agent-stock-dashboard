@@ -1,7 +1,15 @@
 from __future__ import annotations
 import os, json, sqlite3, threading, time
 from pathlib import Path
-from flask import Flask, jsonify, request, send_from_directory
+from flask import (
+    Flask,
+    jsonify,
+    request,
+    send_from_directory,
+    send_file,
+)
+
+from excel_export import export_suggestions
 import requests
 from data_sources import load_demo, load_live, timestamp_ist, refresh_universe
 from llm import evaluate, provider
@@ -27,37 +35,58 @@ def load_env():
 
 load_env()
 DB = ROOT / 'audit.sqlite3'
+EXCEL_FILE = ROOT / "stock_suggestions.xlsx"
 
 
 def db():
     c = sqlite3.connect(DB)
-    c.execute('CREATE TABLE IF NOT EXISTS runs(id INTEGER PRIMARY KEY AUTOINCREMENT,started_at TEXT,finished_at TEXT,mode TEXT,stocks INTEGER,engine TEXT,telegram_sent INTEGER DEFAULT 0)')
-    c.execute('CREATE TABLE IF NOT EXISTS verdicts(id INTEGER PRIMARY KEY AUTOINCREMENT,run_id INTEGER,symbol TEXT,segment TEXT,verdict TEXT,confidence REAL,winner TEXT,rationale TEXT,catalyst TEXT,price REAL,day_change REAL,payload TEXT)')
+    c.row_factory = sqlite3.Row
     c.execute("""
-        CREATE TABLE IF NOT EXISTS telegram_signals (
+        CREATE TABLE IF NOT EXISTS runs(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT NOT NULL,
-            signal_date TEXT NOT NULL,
-            verdict TEXT NOT NULL,
-            confidence REAL,
-            entry_low REAL,
-            entry_high REAL,
-            target1 REAL,
-            target2 REAL,
-            target3 REAL,
-            sent_at TEXT NOT NULL,
-            UNIQUE(symbol, signal_date)
+            started_at TEXT,
+            finished_at TEXT,
+            mode TEXT,
+            stocks INTEGER,
+            engine TEXT,
+            telegram_sent INTEGER DEFAULT 0
         )
     """)
 
     c.execute("""
-        CREATE TABLE IF NOT EXISTS telegram_summaries (
+        CREATE TABLE IF NOT EXISTS verdicts(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            summary_date TEXT NOT NULL UNIQUE,
-            sent_at TEXT NOT NULL
+            run_id INTEGER,
+            symbol TEXT,
+            segment TEXT,
+            verdict TEXT,
+            confidence REAL,
+            winner TEXT,
+            rationale TEXT,
+            catalyst TEXT,
+            price REAL,
+            day_change REAL,
+            payload TEXT,
+            suggested_at TEXT
         )
     """)
+
+    # Migrate an existing database created by an older version
+    columns = {
+        row[1]
+        for row in c.execute(
+            "PRAGMA table_info(verdicts)"
+        ).fetchall()
+    }
+
+    if "suggested_at" not in columns:
+        c.execute("""
+            ALTER TABLE verdicts
+            ADD COLUMN suggested_at TEXT
+        """)
+
     c.commit()
+
     return c
 
 
@@ -332,56 +361,131 @@ def cycle(mode):
         ).lastrowid
         fired = []
 
+
         for idx, (b, r) in enumerate(results):
-            v = r['verdict']
-            p = b['price']
-            plan = r.get('trade_plan') or {
-                'style': 'No entry',
-                'entry': {'low': None, 'high': None},
-                'targets': [],
-                'invalidation': None,
-                'note': ''
-            }
-            chart = f"https://www.tradingview.com/symbols/NSE-{b['symbol']}/"
+
+            v = r["verdict"]
+
+            price_data = b.get(
+                "price",
+                {}
+            )
+
+            trade_plan = (
+                r.get("trade_plan")
+                or {}
+            )
+
+            suggested_at = timestamp_ist()
+
+            chart_url = (
+                f"https://www.tradingview.com/"
+                f"symbols/NSE-{b['symbol']}/"
+            )
+
             entry = {
-                'symbol': b['symbol'],
-                'name': b['name'],
-                'cap': b['cap_segment'],
-                'verdict': v['verdict'],
-                'confidence': v['confidence'],
-                'winner': v['winner'],
-                'why': scrub(v.get('rationale')),
-                'catalyst': scrub(v.get('key_catalyst')),
-                'price': p.get('live'),
-                'day_change_pct': p.get('day_change_pct'),
+                "symbol": b["symbol"],
+                "name": b.get("name"),
+                "cap": b["cap_segment"],
+                "verdict": v["verdict"],
+                "confidence": v["confidence"],
+                "winner": v["winner"],
+                "why": scrub(
+                    v.get("rationale")
+                ),
+                "catalyst": scrub(
+                    v.get("key_catalyst")
+                ),
+                "price": price_data.get("live"),
+                "day_change_pct": price_data.get(
+                    "day_change_pct"
+                ),
+
+                # NEW
+                "chart_url": chart_url,
+
+                # NEW
+                "suggested_at": suggested_at,
+
+                # Existing trade plan
+                "trade_plan": trade_plan,
+
+                # Useful for UI/export
                 "pattern": (
                     b.get("patterns", {})
                     .get("primary", {})
                     .get("pattern")
                     if b.get("patterns", {}).get("primary")
                     else None
-                    ),
-
-                "pattern_status": (
-                    b.get("patterns", {})
-                        .get("primary", {})
-                        .get("status")
-                    if b.get("patterns", {}).get("primary")
-                    else None
-                    ),
-
-
-                'engine': engines[idx],
-                'trade_plan': plan,
-                'chart_url': chart,
+                ),
             }
-            con.execute(
-                'INSERT INTO verdicts(run_id,symbol,segment,verdict,confidence,winner,rationale,catalyst,price,day_change,payload) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-                (rid, b['symbol'], b['cap_segment'], v['verdict'], v['confidence'], v['winner'], entry['why'], entry['catalyst'], p.get('live'), p.get('day_change_pct'), json.dumps(r))
+
+            # IMPORTANT:
+            # Store BOTH evidence and analysis in the payload.
+            payload = json.dumps(
+                {
+                    "evidence": b,
+                    "analysis": r,
+                },
+                ensure_ascii=False,
             )
-            state['verdicts'].append(entry)
-            if v['verdict'] == 'BUY' and float(v['confidence']) >= int(os.getenv('CONFIDENCE_THRESHOLD', '7')):
-                fired.append((b, entry))
+
+            con.execute(
+                """
+                INSERT INTO verdicts(
+                    run_id,
+                    symbol,
+                    segment,
+                    verdict,
+                    confidence,
+                    winner,
+                    rationale,
+                    catalyst,
+                    price,
+                    day_change,
+                    payload,
+                    suggested_at
+                )
+                VALUES(
+                    ?,?,?,?,?,?,
+                    ?,?,?,?,?,?
+                )
+                """,
+                (
+                    rid,
+                    b["symbol"],
+                    b["cap_segment"],
+                    v["verdict"],
+                    v["confidence"],
+                    v["winner"],
+                    entry["why"],
+                    entry["catalyst"],
+                    price_data.get("live"),
+                    price_data.get(
+                        "day_change_pct"
+                    ),
+                    payload,
+                    suggested_at,
+                ),
+            )
+
+            state["verdicts"].append(
+                entry
+            )
+
+            if (
+                v["verdict"] == "BUY"
+                and float(v["confidence"])
+                >= int(
+                    os.getenv(
+                        "CONFIDENCE_THRESHOLD",
+                        "7"
+                    )
+                )
+            ):
+                fired.append(
+                    (b, entry)
+                )
 
         agent('judge', 'done', len(results), len(fired))
         top = max(state['verdicts'], key=lambda x: x['confidence'], default=None)
@@ -431,28 +535,71 @@ def cycle(mode):
                     if target_lines
                     else "data unavailable"
                 )
+#-----------------------------------------------------
+                trade_plan = (
+                    e.get("trade_plan")
+                    or {}
+                )
+
+                entry = (
+                    trade_plan.get("entry")
+                    or {}
+                )
+
+                targets = (
+                    trade_plan.get("targets")
+                    or []
+                )
+
+                target_text = " | ".join(
+                    f"{target.get('label')}: "
+                    f"₹{target.get('price')} "
+                    f"({target.get('time')})"
+                    for target in targets
+                    if target.get("price") is not None
+                )
+
+                if not target_text:
+                    target_text = "data unavailable"
+
+                if (
+                    entry.get("low") is not None
+                    and entry.get("high") is not None
+                ):
+                    entry_text = (
+                        f"₹{entry['low']}–₹{entry['high']}"
+                    )
+                else:
+                    entry_text = "data unavailable"
 
                 msg = (
                     f"🟢 <b>BUY SIGNAL — "
                     f"{e['symbol']} ({e['cap']} cap)</b>\n"
+
                     f"Verdict: BUY | "
                     f"Confidence: {e['confidence']}/10\n"
+
                     f"Winner: {e['winner']}\n"
+
                     f"Why: {e['why']}\n"
-                    f"Key catalyst: {e['catalyst']}\n\n"
 
-                    f"<b>Entry zone:</b> {entry_text}\n"
-                    f"<b>Style:</b> "
-                    f"{tp.get('style', 'data unavailable')}\n"
+                    f"Key catalyst: {e['catalyst']}\n"
 
-                    f"<b>Targets:</b>\n"
-                    f"{target_text}\n"
+                    f"Entry zone: {entry_text}\n"
 
-                    f"<b>Stop Loss:</b> "
-                    f"₹{tp.get('invalidation')}\n\n"
+                    f"Style: "
+                    f"{trade_plan.get('style', 'data unavailable')}\n"
 
-                    f"Live price: ₹{round(e['price'], 2)} | "
-                    f"Day change: {round(e['day_change_pct'], 2)}%\n"
+                    f"Targets: {target_text}\n"
+
+                    f"Invalidation: "
+                    f"₹{trade_plan.get('invalidation')}\n"
+
+                    f"Live price: ₹{e['price']} | "
+                    f"Day change: {e['day_change_pct']}%\n"
+
+                    f"📊 <a href=\"{e['chart_url']}\">"
+                    f"Open chart</a>\n"
 
                     f"— Analysis only. "
                     f"No trade was placed. "
@@ -551,6 +698,20 @@ def cycle(mode):
         agent('messenger', 'done', sent, engines[0] if len(set(engines)) == 1 and engines else 'mixed')
         con.execute('UPDATE runs SET finished_at=?,telegram_sent=? WHERE id=?', (timestamp_ist(), sent, rid))
         con.commit()
+        try:
+
+            export_suggestions(
+                _load_export_rows(con),
+                EXCEL_FILE
+            )
+
+        except Exception as export_error:
+
+            with lock:
+                state["last_error"] = scrub(
+                    f"Excel export warning: "
+                    f"{export_error}"
+                )
         con.close()
 
         with lock:
@@ -625,6 +786,64 @@ def auto_refresh_loop():
                 f"[AUTO REFRESH ERROR] {scrub(str(exc))}"
             )
 
+def _load_export_rows(con=None):
+
+    close_after = False
+
+    if con is None:
+        con = db()
+        close_after = True
+
+    query = """
+        SELECT
+            v.id,
+            v.run_id,
+            r.mode,
+            r.started_at,
+            r.engine,
+            v.symbol,
+            v.segment,
+            v.verdict,
+            v.confidence,
+            v.winner,
+            v.rationale,
+            v.catalyst,
+            v.price,
+            v.day_change,
+            v.payload,
+            v.suggested_at
+        FROM verdicts v
+        JOIN runs r
+            ON r.id = v.run_id
+        ORDER BY v.id ASC
+    """
+
+    result = con.execute(query).fetchall()
+
+    rows = []
+
+    for row in result:
+
+        if isinstance(row, sqlite3.Row):
+            rows.append(dict(row))
+
+        else:
+            columns = [
+                description[0]
+                for description in con.execute(query).description
+            ]
+
+            rows.append(
+                dict(
+                    zip(columns, row)
+                )
+            )
+
+    if close_after:
+        con.close()
+
+    return rows
+
 @app.get('/')
 def home():
     return send_from_directory(ROOT, 'dashboard.html')
@@ -656,6 +875,72 @@ def config():
         'telegram_configured': bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID'))
     })
 
+@app.post("/export/save")
+def export_save():
+
+    try:
+
+        con = db()
+
+        try:
+            rows = _load_export_rows(con)
+
+            export_suggestions(
+                rows,
+                EXCEL_FILE
+            )
+
+        finally:
+            con.close()
+
+        return jsonify({
+            "ok": True,
+            "file": EXCEL_FILE.name,
+            "rows": len(rows),
+        })
+
+    except Exception as exc:
+
+        return jsonify({
+            "ok": False,
+            "error": scrub(str(exc)),
+        }), 500
+
+@app.get("/export/download")
+def export_download():
+
+    try:
+
+        # Always regenerate from SQLite
+        con = db()
+
+        try:
+            rows = _load_export_rows(con)
+
+            export_suggestions(
+                rows,
+                EXCEL_FILE
+            )
+
+        finally:
+            con.close()
+
+        return send_file(
+            EXCEL_FILE,
+            as_attachment=True,
+            download_name="stock_suggestions.xlsx",
+            mimetype=(
+                "application/vnd.openxmlformats-"
+                "officedocument.spreadsheetml.sheet"
+            ),
+        )
+
+    except Exception as exc:
+
+        return jsonify({
+            "ok": False,
+            "error": scrub(str(exc)),
+        }), 500
 
 if __name__ == "__main__":
 
