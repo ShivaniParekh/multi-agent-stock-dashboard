@@ -192,59 +192,146 @@ def refresh_universe():
 
 
 def load_live(shortlist=6):
+
     import yfinance as yf
-    u = json.loads((ROOT / 'universe.json').read_text(encoding='utf-8'))
+
+    universe = json.loads(
+        (ROOT / "universe.json").read_text()
+    )
+
     candidates = []
 
-    for seg in ('large', 'mid', 'small'):
-        tickers = u.get(seg, [])
-        if not tickers:
-            continue
-        data = yf.download(
-            tickers=tickers,
-            period='1mo',
-            interval='1d',
-            auto_adjust=False,
-            group_by='ticker',
-            threads=True,
-            progress=False
+    batch_size = int(
+    os.getenv(
+        "YF_BATCH_SIZE",
+        "75"
+    )
+)
+
+    for segment in (
+        "large",
+        "mid",
+        "small",
+    ):
+
+        tickers = universe.get(
+            segment,
+            []
         )
-        scored = []
-        for t in tickers:
+
+        for start in range(
+            0,
+            len(tickers),
+            batch_size
+        ):
+
+            batch = tickers[
+                start:start + batch_size
+            ]
+
             try:
-                d = data[t] if isinstance(data.columns, pd.MultiIndex) and t in data.columns.get_level_values(0) else data
-                c = d['Close'].dropna()
-                v = d['Volume'].dropna()
-                if len(c) < 2:
-                    continue
-                price = float(c.iloc[-1])
-                prev = float(c.iloc[-2])
-                volume = float(v.iloc[-1]) if len(v) else 0
-                avg = float(v.iloc[-21:-1].mean()) if len(v) > 2 else 0
-                day = (price / prev - 1) * 100
-                if price < float(os.getenv('MIN_PRICE', '20')) or avg < float(os.getenv('MIN_AVG_VOLUME', '100000')):
-                    continue
-                scored.append((t, day, volume, avg))
+
+                data = yf.download(
+                    tickers=batch,
+                    period="1mo",
+                    interval="1d",
+                    auto_adjust=False,
+                    group_by="ticker",
+                    threads=False,
+                    progress=False,
+                    timeout=15,
+                )
+
             except Exception:
+
                 continue
-        scored.sort(key=lambda x: x[1], reverse=True)
-        candidates += [(seg, x[0]) for x in scored[:shortlist]]
 
-    out = []
-    for seg, t in candidates:
-        try:
-            o = yf.Ticker(t)
-            h = o.history(period='1y', interval='1d', auto_adjust=False)
-            out.append(build_evidence(t, seg, o.info or {}, h, o.news or []))
-        except Exception:
-            continue
+            for ticker in batch:
 
-    return {
-        'universe_count': sum(len(u.get(seg, [])) for seg in ('large', 'mid', 'small')),
-        'screened_count': len(candidates),
-        'bundles': out
-    }
+                try:
 
+                    if (
+                        isinstance(
+                            data.columns,
+                            pd.MultiIndex
+                        )
+                        and ticker in data.columns.get_level_values(0)
+                    ):
+                        df = data[ticker]
+
+                    else:
+                        df = data
+
+                    close = (
+                        df["Close"]
+                        .dropna()
+                    )
+
+                    volume = (
+                        df["Volume"]
+                        .dropna()
+                    )
+
+                    if len(close) < 2:
+                        continue
+
+                    price = float(
+                        close.iloc[-1]
+                    )
+
+                    previous = float(
+                        close.iloc[-2]
+                    )
+
+                    today_volume = (
+                        float(volume.iloc[-1])
+                        if len(volume)
+                        else 0
+                    )
+
+                    avg_volume = (
+                        float(
+                            volume.iloc[-21:-1]
+                            .mean()
+                        )
+                        if len(volume) > 2
+                        else 0
+                    )
+
+                    day_change = (
+                        (price / previous - 1)
+                        * 100
+                    )
+
+                    if price < float(
+                        os.getenv(
+                            "MIN_PRICE",
+                            "20"
+                        )
+                    ):
+                        continue
+
+                    if avg_volume < float(
+                        os.getenv(
+                            "MIN_AVG_VOLUME",
+                            "100000"
+                        )
+                    ):
+                        continue
+
+                    candidates.append(
+                        {
+                            "segment": segment,
+                            "ticker": ticker,
+                            "day_change": day_change,
+                        }
+                    )
+
+                except Exception:
+                    continue
+
+            # Release the pandas object before next batch
+            del data
 
 def timestamp_ist():
     return datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')

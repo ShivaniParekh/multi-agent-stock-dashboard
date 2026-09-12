@@ -293,6 +293,8 @@ def cycle(mode):
             if stale:
                 refresh_universe()
             live_result = load_live(per)
+            if live_result is None:
+                raise RuntimeError('Failed to load live data')
             bundles = live_result['bundles']
             universe_count = live_result['universe_count']
             screened_count = live_result['screened_count']
