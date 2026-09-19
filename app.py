@@ -71,6 +71,34 @@ def db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_signals(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            symbol TEXT NOT NULL,
+
+            signal_date TEXT NOT NULL,
+
+            verdict TEXT,
+
+            confidence REAL,
+
+            entry_low REAL,
+
+            entry_high REAL,
+
+            target1 REAL,
+
+            target2 REAL,
+
+            target3 REAL,
+
+            sent_at TEXT,
+
+            UNIQUE(symbol, signal_date)
+        )
+    """)
+
     # Migrate an existing database created by an older version
     columns = {
         row[1]
