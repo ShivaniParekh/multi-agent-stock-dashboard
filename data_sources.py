@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 from pattern_detection import detect_patterns
 
+
 ROOT = Path(__file__).resolve().parent
 IST = timezone(timedelta(hours=5, minutes=30))
 NSE_EQUITY_URL = 'https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv'
@@ -160,7 +161,7 @@ def refresh_universe():
     inc = {x.upper() for x in ov.get('include', [])}
     syms = [s for s in syms if s not in exc and s.replace('.NS', '') not in exc]
     syms = sorted(set(syms) | {(x if x.endswith('.NS') else x + '.NS').upper() for x in inc})
-    maxu = int(os.getenv('UNIVERSE_REFRESH_MAX', '2000'))
+    maxu = int(os.getenv('UNIVERSE_REFRESH_MAX', '500'))
     syms = syms[:maxu]
 
     caps = []
@@ -173,7 +174,9 @@ def refresh_universe():
         except Exception:
             return t, 0
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(
+    max_workers=int(os.getenv('UNIVERSE_REFRESH_WORKERS', '3'))
+) as ex:
         for f in as_completed([ex.submit(cap, s) for s in syms]):
             caps.append(f.result())
 
@@ -192,146 +195,171 @@ def refresh_universe():
 
 
 def load_live(shortlist=6):
-
+    import gc
     import yfinance as yf
 
-    universe = json.loads(
-        (ROOT / "universe.json").read_text()
-    )
+    u = json.loads((ROOT / 'universe.json').read_text(encoding='utf-8'))
 
     candidates = []
 
-    batch_size = int(
-    os.getenv(
-        "YF_BATCH_SIZE",
-        "75"
-    )
-)
 
-    for segment in (
-        "large",
-        "mid",
-        "small",
-    ):
+    batch_size = int(os.getenv('YF_BATCH_SIZE', '25'))
 
-        tickers = universe.get(
-            segment,
-            []
-        )
+    min_price = float(os.getenv('MIN_PRICE', '20'))
+    min_avg_volume = float(os.getenv('MIN_AVG_VOLUME', '100000'))
 
-        for start in range(
-            0,
-            len(tickers),
-            batch_size
-        ):
+    for seg in ('large', 'mid', 'small'):
+        tickers = u.get(seg, [])
 
-            batch = tickers[
-                start:start + batch_size
-            ]
+        if not tickers:
+            continue
+
+        scored = []
+
+        # Process the universe in small batches.
+        for start in range(0, len(tickers), batch_size):
+            batch = tickers[start:start + batch_size]
 
             try:
-
                 data = yf.download(
                     tickers=batch,
-                    period="1mo",
-                    interval="1d",
+                    period='1mo',
+                    interval='1d',
                     auto_adjust=False,
-                    group_by="ticker",
+                    group_by='ticker',
                     threads=False,
-                    progress=False,
-                    timeout=15,
+                    progress=False
                 )
 
-            except Exception:
-
-                continue
-
-            for ticker in batch:
-
-                try:
-
-                    if (
-                        isinstance(
-                            data.columns,
-                            pd.MultiIndex
-                        )
-                        and ticker in data.columns.get_level_values(0)
-                    ):
-                        df = data[ticker]
-
-                    else:
-                        df = data
-
-                    close = (
-                        df["Close"]
-                        .dropna()
-                    )
-
-                    volume = (
-                        df["Volume"]
-                        .dropna()
-                    )
-
-                    if len(close) < 2:
-                        continue
-
-                    price = float(
-                        close.iloc[-1]
-                    )
-
-                    previous = float(
-                        close.iloc[-2]
-                    )
-
-                    today_volume = (
-                        float(volume.iloc[-1])
-                        if len(volume)
-                        else 0
-                    )
-
-                    avg_volume = (
-                        float(
-                            volume.iloc[-21:-1]
-                            .mean()
-                        )
-                        if len(volume) > 2
-                        else 0
-                    )
-
-                    day_change = (
-                        (price / previous - 1)
-                        * 100
-                    )
-
-                    if price < float(
-                        os.getenv(
-                            "MIN_PRICE",
-                            "20"
-                        )
-                    ):
-                        continue
-
-                    if avg_volume < float(
-                        os.getenv(
-                            "MIN_AVG_VOLUME",
-                            "100000"
-                        )
-                    ):
-                        continue
-
-                    candidates.append(
-                        {
-                            "segment": segment,
-                            "ticker": ticker,
-                            "day_change": day_change,
-                        }
-                    )
-
-                except Exception:
+                if data is None or data.empty:
+                    del data
+                    gc.collect()
                     continue
 
-            # Release the pandas object before next batch
-            del data
+                for t in batch:
+                    try:
+                        if isinstance(data.columns, pd.MultiIndex):
+                            if t not in data.columns.get_level_values(0):
+                                continue
+                            d = data[t]
+                        else:
+                            d = data
+
+                        if 'Close' not in d.columns or 'Volume' not in d.columns:
+                            continue
+
+                        c = d['Close'].dropna()
+                        v = d['Volume'].dropna()
+
+                        if len(c) < 2:
+                            continue
+
+                        price = float(c.iloc[-1])
+                        prev = float(c.iloc[-2])
+
+                        volume = float(v.iloc[-1]) if len(v) else 0
+                        avg = float(v.iloc[-21:-1].mean()) if len(v) > 2 else 0
+
+                        day = ((price / prev) - 1) * 100
+
+                        if price < min_price:
+                            continue
+
+                        if avg < min_avg_volume:
+                            continue
+
+                        scored.append((t, day, volume, avg))
+
+                    except Exception:
+                        continue
+
+                # Immediately release this batch before downloading
+                # the next batch.
+                del data
+                gc.collect()
+
+            except Exception as e:
+                # One failed Yahoo batch should not kill the entire run.
+                print(f"[load_live] batch failed for {seg}: {e}")
+                gc.collect()
+                continue
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+
+        # Only keep the top movers from this segment for detailed analysis.
+        candidates += [
+            (seg, x[0])
+            for x in scored[:shortlist]
+        ]
+
+    # ---------------------------------------------------------
+    # SECOND STAGE:
+    # Detailed data only for shortlisted stocks.
+    # ---------------------------------------------------------
+
+    out = []
+
+    for seg, t in candidates:
+        try:
+            o = yf.Ticker(t)
+
+            # Only finalists reach this stage.
+            h = o.history(
+                period=os.getenv('DETAIL_HISTORY_PERIOD', '6mo'),
+                interval='1d',
+                auto_adjust=False
+            )
+
+            if h is None or h.empty:
+                continue
+
+            info = {}
+            news = []
+
+            # These calls can be expensive/unreliable, so keep them
+            # isolated to shortlisted stocks only.
+            try:
+                info = o.info or {}
+            except Exception as e:
+                print(f"[load_live] info failed for {t}: {e}")
+
+            try:
+                news = o.news or []
+            except Exception as e:
+                print(f"[load_live] news failed for {t}: {e}")
+
+            out.append(
+                build_evidence(
+                    t,
+                    seg,
+                    info,
+                    h,
+                    news
+                )
+            )
+
+            del h
+            del o
+            gc.collect()
+
+        except Exception as e:
+            print(f"[load_live] detailed fetch failed for {t}: {e}")
+            gc.collect()
+            continue
+
+    if not out:
+        raise RuntimeError(
+            'Failed to load live data: no valid stock data was returned by Yahoo Finance'
+        )
+
+    return {
+        'universe_count': sum(
+            len(u.get(seg, []))
+            for seg in ('large', 'mid', 'small')
+        ),
+        'screened_count': len(candidates),
+        'bundles': out
+    }
 
 def timestamp_ist():
     return datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')
