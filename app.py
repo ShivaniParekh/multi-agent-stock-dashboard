@@ -286,15 +286,34 @@ def cycle(mode):
 
         if mode == 'live':
             try:
-                u = json.loads((ROOT / 'universe.json').read_text(encoding='utf-8'))
+                u = json.loads(
+                    (ROOT / 'universe.json').read_text(
+                        encoding='utf-8'
+                    )
+                )
+
                 stale = not u.get('meta', {}).get('updated_at')
-            except Exception:
-                stale = True
+
+            except Exception as e:
+                raise RuntimeError(
+                    f'Unable to read universe.json: {e}'
+                )
+
             if stale:
-                refresh_universe()
-            live_result = load_live(per)
-            if live_result is None:
-                raise RuntimeError('Failed to load live data')
+                try:
+                    refresh_universe()
+                except Exception as e:
+                    raise RuntimeError(
+                        f'Universe refresh failed: {e}'
+                    )
+
+            try:
+                live_result = load_live(per)
+            except Exception as e:
+                raise RuntimeError(
+                    f'Live data loading failed: {e}'
+                )
+
             bundles = live_result['bundles']
             universe_count = live_result['universe_count']
             screened_count = live_result['screened_count']
@@ -725,9 +744,13 @@ def cycle(mode):
                 'telegram': {'configured': bool(os.getenv('TELEGRAM_BOT_TOKEN') and os.getenv('TELEGRAM_CHAT_ID')), 'sent': sent}
             })
     except Exception as e:
+        print(
+        f"[cycle] {type(e).__name__}: {e}",
+        flush=True
+    )
         with lock:
             state['running'] = False
-            state['last_error'] = scrub(str(e))
+            state['last_error'] = scrub(f'{type(e).__name__}: {e}')
             state['timestamp'] = timestamp_ist()
 
 def auto_refresh_loop():
