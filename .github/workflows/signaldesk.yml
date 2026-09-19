@@ -1,0 +1,87 @@
+name: SignalDesk Scheduled Analysis
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # 09:15, 09:30, 09:45 IST
+    - cron: '15,30,45 9 * * 1-5'
+      timezone: 'Asia/Kolkata'
+
+    # Every 15 minutes from 10:00 to 14:45 IST
+    - cron: '*/15 10-14 * * 1-5'
+      timezone: 'Asia/Kolkata'
+
+    # 15:00, 15:15, 15:30 IST
+    - cron: '0,15,30 15 * * 1-5'
+      timezone: 'Asia/Kolkata'
+
+jobs:
+  signaldesk:
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 10
+
+    env:
+
+      # ==============================
+      # Gemini
+      # ==============================
+      LLM_PROVIDER: gemini
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL_NAME: gemini-2.5-flash
+
+      # ==============================
+      # Telegram
+      # ==============================
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      # ==============================
+      # SignalDesk settings
+      # ==============================
+      CONFIDENCE_THRESHOLD: '7'
+
+      # ==============================
+      # Memory-safe data settings
+      # ==============================
+      UNIVERSE_REFRESH_MAX: '500'
+      UNIVERSE_REFRESH_WORKERS: '3'
+      YF_BATCH_SIZE: '25'
+      SHORTLIST_PER_BUCKET: '3'
+      DETAIL_HISTORY_PERIOD: '6mo'
+
+      MIN_PRICE: '20'
+      MIN_AVG_VOLUME: '100000'
+
+    steps:
+
+      # ------------------------------
+      # Checkout repository
+      # ------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------
+      # Setup Python
+      # ------------------------------
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ------------------------------
+      # Install dependencies
+      # ------------------------------
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ------------------------------
+      # Run SignalDesk
+      # ------------------------------
+      - name: Run live stock analysis
+        run: |
+          python cron_job.py
