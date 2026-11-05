@@ -2,86 +2,68 @@ name: SignalDesk Scheduled Analysis
 
 on:
   workflow_dispatch:
-
   schedule:
-    # 09:15, 09:30, 09:45 IST
-    - cron: '15,30,45 9 * * 1-5'
-      timezone: 'Asia/Kolkata'
-
-    # Every 15 minutes from 10:00 to 14:45 IST
-    - cron: '*/15 10-14 * * 1-5'
-      timezone: 'Asia/Kolkata'
-
-    # 15:00, 15:15, 15:30 IST
-    - cron: '0,15,30 15 * * 1-5'
-      timezone: 'Asia/Kolkata'
+    # 09:15 IST -> 03:45 UTC
+    - cron: '45 3 * * 1-5'
+    # 09:30 to 15:15 IST -> 04:00 to 09:45 UTC every 15 min
+    - cron: '*/15 4-9 * * 1-5'
+    # 15:30 IST -> 10:00 UTC
+    - cron: '0 10 * * 1-5'
 
 jobs:
   signaldesk:
-
     runs-on: ubuntu-latest
-
     timeout-minutes: 10
 
     env:
-
-      # ==============================
-      # Gemini
-      # ==============================
       LLM_PROVIDER: gemini
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_MODEL_NAME: gemini-2.5-flash
-
-      # ==============================
-      # Telegram
-      # ==============================
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-      # ==============================
-      # SignalDesk settings
-      # ==============================
       CONFIDENCE_THRESHOLD: '7'
-
-      # ==============================
-      # Memory-safe data settings
-      # ==============================
       UNIVERSE_REFRESH_MAX: '500'
       UNIVERSE_REFRESH_WORKERS: '3'
       YF_BATCH_SIZE: '25'
       SHORTLIST_PER_BUCKET: '3'
       DETAIL_HISTORY_PERIOD: '6mo'
-
       MIN_PRICE: '20'
       MIN_AVG_VOLUME: '100000'
 
     steps:
+      - name: Enforce IST Market Hours
+        id: gate
+        run: |
+          CURRENT_IST=$(TZ="Asia/Kolkata" date +"%H%M")
+          echo "Current IST Time: $CURRENT_IST"
 
-      # ------------------------------
-      # Checkout repository
-      # ------------------------------
+          # Allow between 09:15 (0915) and 15:35 (1535)
+          # Use 10# to force base-10 parsing and avoid octal error on 0915
+          if [ $((10#$CURRENT_IST)) -lt 915 ] || [ $((10#$CURRENT_IST)) -gt 1535 ]; then
+            echo "Outside market hours. Marking steps to skip."
+            echo "run_analysis=false" >> $GITHUB_OUTPUT
+          else
+            echo "Within market hours. Proceeding."
+            echo "run_analysis=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Checkout repository
+        if: steps.gate.outputs.run_analysis == 'true'
         uses: actions/checkout@v4
 
-      # ------------------------------
-      # Setup Python
-      # ------------------------------
       - name: Setup Python
+        if: steps.gate.outputs.run_analysis == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # ------------------------------
-      # Install dependencies
-      # ------------------------------
       - name: Install dependencies
+        if: steps.gate.outputs.run_analysis == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ------------------------------
-      # Run SignalDesk
-      # ------------------------------
       - name: Run live stock analysis
+        if: steps.gate.outputs.run_analysis == 'true'
         run: |
           python cron_job.py
