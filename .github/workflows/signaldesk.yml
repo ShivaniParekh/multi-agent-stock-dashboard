@@ -34,6 +34,13 @@ jobs:
       - name: Enforce IST Market Hours
         id: gate
         run: |
+          # Allow manual triggers to proceed regardless of time
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger detected. Proceeding regardless of market hours."
+            echo "run_analysis=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           CURRENT_IST=$(TZ="Asia/Kolkata" date +"%H%M")
           echo "Current IST Time: $CURRENT_IST"
 
@@ -56,6 +63,21 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+
+      - name: Get Current IST Date
+        if: steps.gate.outputs.run_analysis == 'true'
+        id: ist_date
+        run: echo "date=$(TZ='Asia/Kolkata' date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
+      - name: Restore Daily SQLite Signal History
+        if: steps.gate.outputs.run_analysis == 'true'
+        uses: actions/cache@v4
+        with:
+          path: audit.sqlite3
+          key: audit-db-${{ steps.ist_date.outputs.date }}-${{ github.run_id }}
+          restore-keys: |
+            audit-db-${{ steps.ist_date.outputs.date }}-
 
       - name: Install dependencies
         if: steps.gate.outputs.run_analysis == 'true'
