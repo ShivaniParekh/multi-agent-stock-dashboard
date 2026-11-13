@@ -13,7 +13,7 @@ on:
 jobs:
   signaldesk:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     env:
       LLM_PROVIDER: gemini
@@ -22,7 +22,14 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       CONFIDENCE_THRESHOLD: '7'
-      UNIVERSE_REFRESH_MAX: '500'
+      UNIVERSE_MAX_AGE_DAYS: '7'
+      UNIVERSE_REFRESH_MAX: '2000'
+      UNIVERSE_MIN_VALID_CAP_RATIO: '0.50'
+      YF_NEWS_RETRIES: '2'
+      YF_RETRY_BASE_SECONDS: '1'
+      YF_NEWS_CIRCUIT_THRESHOLD: '2'
+      SYMBOL_MISSING_THRESHOLD: '3'
+      SYMBOL_QUARANTINE_DAYS: '30'
       UNIVERSE_REFRESH_WORKERS: '3'
       YF_BATCH_SIZE: '25'
       SHORTLIST_PER_BUCKET: '3'
@@ -42,8 +49,15 @@ jobs:
           fi
 
           CURRENT_IST=$(TZ="Asia/Kolkata" date +"%H%M")
-          echo "Current IST Time: $CURRENT_IST"
-
+          echo "=================================="
+          echo "SignalDesk Scheduler Diagnostics"
+          echo "=================================="
+          echo "Event: $GITHUB_EVENT_NAME"
+          echo "Scheduled Cron: ${{ github.event.schedule }}"
+          echo "Branch: $GITHUB_REF"
+          echo "Current IST: $CURRENT_IST"
+          echo "UTC Time: $(date -u)"
+          echo "=================================="
           # Allow between 09:15 (0915) and 15:35 (1535)
           # Use 10# to force base-10 parsing and avoid octal error on 0915
           if [ $((10#$CURRENT_IST)) -lt 915 ] || [ $((10#$CURRENT_IST)) -gt 1535 ]; then
@@ -78,6 +92,17 @@ jobs:
           key: audit-db-${{ steps.ist_date.outputs.date }}-${{ github.run_id }}
           restore-keys: |
             audit-db-${{ steps.ist_date.outputs.date }}-
+
+      - name: Restore NSE Universe and Symbol Health
+        if: steps.gate.outputs.run_analysis == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            universe.json
+            symbol_health.json
+          key: signaldesk-state-${{ steps.ist_date.outputs.date }}-${{ github.run_id }}
+          restore-keys: |
+            signaldesk-state-
 
       - name: Install dependencies
         if: steps.gate.outputs.run_analysis == 'true'
